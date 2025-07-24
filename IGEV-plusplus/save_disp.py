@@ -66,7 +66,8 @@ def demo(args):
             if args.save_numpy:
                 np.save(file_stem.replace('.png', '.npy'), disp)
     '''
-    cap = cv2.VideoCapture(0)
+    # Default backend: MSMF
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
     if not cap.isOpened():
         print("Cannot open camera")
         return
@@ -136,8 +137,8 @@ def demo(args):
                 cv2.convertScaleAbs(disp, alpha=255.0 / (disp.max() if disp.max() > 0 else 1)),
                 cv2.COLORMAP_JET
             )
-            result = np.hstack((left_rect, disp_vis))
-            result = cv2.resize(result, (result.shape[1], result.shape[0]), interpolation=cv2.INTER_LINEAR)
+            result = np.hstack((left_rect, right_rect, disp_vis))
+            # result = cv2.resize(result, (result.shape[1], result.shape[0]), interpolation=cv2.INTER_LINEAR)
             cv2.imshow('Disparity', result)
             # cv2.imshow('Left Rectified', left_rect)
             # cv2.imshow('Right Rectified', right_rect)
