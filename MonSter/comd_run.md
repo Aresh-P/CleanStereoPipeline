@@ -1,0 +1,1 @@
+python evaluate_stereo.py --restore_ckpt ./pretrained/kitti.pth --dataset kitti
