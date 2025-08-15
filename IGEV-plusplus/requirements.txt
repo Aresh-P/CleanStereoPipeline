@@ -1,6 +1,6 @@
 tqdm
 scipy
-opencv-python
+opencv-contrib-python
 scikit-image
 tensorboard
 matplotlib 

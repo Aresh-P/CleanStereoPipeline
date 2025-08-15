@@ -7,6 +7,7 @@ import numpy as np
 import sys
 import os
 import time
+import threading
 
 from utils import load_calibration, rectify, disp_to_depth
 from stereo_sources import OpenCVLiveSource, StereoImageSource
@@ -72,15 +73,37 @@ def main():
         print("  End - Last image")
     
     frame_count = 0
-    
+
+    '''
+    # Shared frame and lock
+    latest_pair = None
+    frame_lock = threading.Lock()
+    stop_flag = {'stop': False}
+
+    def frame_grabber():
+        while not stop_flag['stop']:
+            pair = source.get_pair()
+            with frame_lock:
+                latest_pair = pair
+            # Sleep a little to avoid busy-waiting
+            time.sleep(0.005)
+
+    grabber_thread = threading.Thread(target=frame_grabber, daemon=True)
+    grabber_thread.start()
+    '''
+
     while True:
         try:
-            # Capture stereo pair
-            unrect_pair = source.get_pair()
+            '''
+            # Get the latest frame
+            with frame_lock:
+                unrect_pair = latest_pair
             if unrect_pair is None:
-                print("Didn't get a pair, exiting")
-                exit()
-            
+                time.sleep(0.008)
+                continue
+            '''
+            unrect_pair = source.get_pair()
+
             # Debug: Check if images are black
             if is_live and frame_count == 0:
                 left_mean = np.mean(unrect_pair.left)
@@ -162,6 +185,8 @@ def main():
             break
     
     # Cleanup
+    stop_flag['stop'] = True
+    grabber_thread.join()
     cv2.destroyAllWindows()
     if not is_live:
         print()  # New line after progress indicator

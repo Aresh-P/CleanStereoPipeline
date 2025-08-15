@@ -83,7 +83,7 @@ def demo(args):
     std = [0.229, 0.224, 0.225]
     normalize = NormalizeTensor(mean, std)
 
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
     if not cap.isOpened():
         print("Cannot open camera")
         return

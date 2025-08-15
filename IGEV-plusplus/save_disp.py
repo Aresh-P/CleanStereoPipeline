@@ -16,6 +16,7 @@ import skimage.io
 import cv2
 import time
 import threading
+import pickle
 
 DEVICE = 'cuda'
 
@@ -66,8 +67,7 @@ def demo(args):
             if args.save_numpy:
                 np.save(file_stem.replace('.png', '.npy'), disp)
     '''
-    # Default backend: MSMF
-    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    cap = cv2.VideoCapture(0, 700) # DSHOW
     if not cap.isOpened():
         print("Cannot open camera")
         return
@@ -180,5 +180,8 @@ if __name__ == '__main__':
     parser.add_argument('--l_disp_interval', type=int, default=4, help="disp interval of large disparity-range geometry encoding volume")
     
     args = parser.parse_args()
+
+    with open("igev_args.pkl", "wb") as f:
+        pickle.dump(args, f)
 
     demo(args)

@@ -3,6 +3,15 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 import cv2
+import torch
+
+
+# Add IGEV-plusplus to sys.path for package imports
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), 'IGEV-plusplus'))
+from core_rt.rt_igev_stereo import IGEVStereo
+from core_rt.utils.utils import InputPadder
 
 from utils import StereoMatcher, RectStereoPair, DispMap
 
@@ -151,3 +160,35 @@ class DownsampleStereoMatcher(StereoMatcher):
         scaled_disp = upsampled_disp * self.downsampling_factor
         
         return scaled_disp.astype(np.float32)
+
+class IGEVRTMatcher(StereoMatcher):
+
+    def __init__(self, args):
+
+        self.args = args
+
+        self.DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+        # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+
+        self.model = torch.nn.DataParallel(IGEVStereo(args), device_ids=[0])
+        self.model.load_state_dict(torch.load(args.restore_ckpt))
+        self.model = self.model.module
+        self.model.to(self.DEVICE)
+        self.model.eval()
+
+    def match(self, rect_pair: RectStereoPair) -> DispMap:
+
+        padder = InputPadder(rect_pair.left.shape, divis_by=32)
+        
+        image1 = torch.from_numpy(rect_pair.left).permute(2, 0, 1).float() / 255.0
+        image2 = torch.from_numpy(rect_pair.right).permute(2, 0, 1).float() / 255.0
+        image1 = image1.to(self.DEVICE)
+        image2 = image2.to(self.DEVICE)
+        image1 = torch.unsqueeze(image1, 0)  # Add batch dimension  
+        image2 = torch.unsqueeze(image2, 0)
+        image1, image2 = padder.pad(image1, image2)
+
+        disp = self.model(image1, image2, iters=self.args.valid_iters, test_mode=True)
+        disp = padder.unpad(disp)
+        disp = disp.cpu().numpy().squeeze()
+        return disp.astype(np.float32)

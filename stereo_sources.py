@@ -3,51 +3,90 @@ import cv2
 import numpy as np
 import glob
 from typing import List, Optional
+import threading
+import time
+class FrameBuffer:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.frame = None
+
+    def update(self, frame):
+        with self.lock:
+            self.frame = frame
+
+    def get(self):
+        with self.lock:
+            return self.frame.copy() if self.frame is not None else None
 
 class OpenCVLiveSource(StereoPairSource):
     def __init__(self, device_id):
-        self.cap = cv2.VideoCapture(device_id)
+
+        # Backends:
+        #   python -c "import cv2; print([(b, cv2.videoio_registry.getBackendName(b)) for b in cv2.videoio_registry.getBackends()])"
+        #   [(1900, 'FFMPEG'), (1800, 'GSTREAMER'), (2300, 'INTEL_MFX'), (1400, 'MSMF'), (1400, 'MSMF'), 
+        #    (700, 'DSHOW'), (2000, 'CV_IMAGES'), (2200, 'CV_MJPEG'), (2500, 'UEYE'), (2600, 'OBSENSOR')]
+        #   1900 (FFMPEG) doesn't open
+        #   1800 (GSTREAMER) doesn't open
+        #   2300 (INTEL_MFX) doesn't open
+        #   1400 (MSMF) (default) eventually freezes
+        #   700 (DSHOW) eventually goes black
+        #   2000 (CV_IMAGES) can't open by index
+        #   2200 (CV_MJPEG) can't open by index
+        #   2500 (UEYE) doesn't open
+        #   2600 (OBSENSOR) doesn't open
+
+        self.cap = cv2.VideoCapture(device_id, 700)
         if not self.cap.isOpened():
             raise RuntimeError(f"Failed to open camera device {device_id}")
-        
-        # Try to set highest resolution (4416x1242)
+
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 4416)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1242)
-        
-        # Print actual resolution achieved
+
         actual_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         actual_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         print(f"Camera resolution: {actual_width}x{actual_height}")
-        
+
         if actual_width != 4416 or actual_height != 1242:
             print(f"Warning: Could not set camera to 4416x1242, using {actual_width}x{actual_height}")
-        
-        # Capture and discard frames for autoexposure
+
         print("Warming up camera (capturing frames for autoexposure)...")
         for i in range(20):
             ret, frame = self.cap.read()
             if ret:
                 print(f"Captured warmup frame {i+1}/20", end='\r')
         print("\nCamera warmup complete")
-    
+
+        self.frame_buffer = FrameBuffer()
+        self.running = True
+        self.thread = threading.Thread(target=self._capture_thread, daemon=True)
+        self.thread.start()
+
+    def _capture_thread(self):
+        while self.running:
+            ret, frame = self.cap.read()
+            if ret:
+                self.frame_buffer.update(frame)
+            time.sleep(0.01)  # Slight delay to avoid busy-waiting
+
     def get_pair(self) -> Optional[UnrectStereoPair]:
-        ret, frame = self.cap.read()
-        if not ret:
+        frame = self.frame_buffer.get()
+        if frame is None:
             return None
-                
-        # Split side-by-side stereo image
+
         height, width = frame.shape[:2]
         half_width = width // 2
-        
+
         left_image = frame[:, :half_width]
         right_image = frame[:, half_width:]
-                
+
         return UnrectStereoPair(left=left_image, right=right_image)
-    
+
     def __del__(self):
+        self.running = False
+        if hasattr(self, 'thread') and self.thread.is_alive():
+            self.thread.join(timeout=1)
         if hasattr(self, 'cap') and self.cap is not None:
             self.cap.release()
-
 
 class StereoImageSource(StereoPairSource):
     def __init__(self, image_pattern: str):
